@@ -106,15 +106,43 @@ while(1){
 		$locid = $insertlocations_handle->fetch()->[0];
 
 
+		### BEGIN CHECK ENTITY TO SEE IF IT ALREADY HAS A last_location_status_id and if so set the data_end value to now.
+		$query = "select id, last_location_status_id from entity where name='$tripid'";
 
-		$insertstatus = "insert into entity_status (entity_id, location_id, data) values ((select id from entity where name='$tripid'), $locid, 'The $subwayline train is a comin at $timeholder') returning id";
+		$query2_handle = $dbh->prepare($query);
+
+		# EXECUTE THE QUERY
+		$query2_handle->execute();
+
+		# BIND TABLE COLUMNS TO VARIABLES
+		$query2_handle->bind_columns(\$entity_id, \$last_loc_status_id );
+		$query2_handle->fetch();
+
+		print "need to update entity_status,  last_location_status_id = $last_loc_status_id \n";
+
+		### END CHECK EXISTING ENTITY VALUES
+
+
+
+
+
+
+		$insertstatus = "insert into entity_status (entity_id, has_data, has_begin, location_id, data, data_begin) values ($entity_id, 'TRUE', 'TRUE', $locid, '{ \"train_info\": \"The $subwayline train is a comin at $timeholder\" } ', now() ) returning id";
 
 		$insertstatus_handle = $dbh->prepare($insertstatus);
 		$insertstatus_handle->execute();
 		#get the returned status id
 		$statusid = $insertstatus_handle->fetch()->[0];
 
-		my $rows = $dbh->do("UPDATE entity set location_id=$locid, last_status_id=$statusid where name='$tripid'");
+
+	### BEGIN UPDATE entity_status set data_end to now().
+	if($last_loc_status_id != -1) {
+		my $rows = $dbh->do("UPDATE entity_status set data_end=now(), has_end='TRUE' WHERE id=$last_loc_status_id" );
+	}
+	### END UPDATE entity_status
+		
+
+	my $rows = $dbh->do("UPDATE entity set has_location='TRUE', location_id=$locid, last_location_status_id=$statusid where id=$entity_id");
 
 
 	} 
