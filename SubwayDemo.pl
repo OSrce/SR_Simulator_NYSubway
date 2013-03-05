@@ -32,13 +32,7 @@ while(1){
 	#find the stations that each subway is between
 	# PREPARE THE QUERY
 
-	$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'  ";
-
-#and (a.trip_id='B20121216WKD_117100_M..N20R' OR a.trip_id='B20121216WKD_120750_L..N01R')
-
-
-
-	#print "$daysearch\n";
+	$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'";
 
 	$query_handle = $dbh->prepare($query);
 
@@ -50,11 +44,6 @@ while(1){
 
 	# LOOP THROUGH RESULTS
 	while($query_handle->fetch()) {
-
-		
-	#FOR finding geometries of a subway route
-	#SELECT sr_geom from sr_layer_static_data where layer_id=2002 AND feature_data LIKE '%"ROUTE":"%5%","NAME"%';
-
 
 	#calculate what percent along the way the subway is
 		#parse the time string e.g. 10:15:12 to get the time in seconds from midnight (for easier math)
@@ -94,9 +83,6 @@ while(1){
 		print "$tripid $dataid $pct_along_route $startid $endid		$subwayline  $train\n";
 
 		#update the sr tables
-		#insert into sr_locations (source, address) values(6, 'Train test') returning id;
-		#insert into entity_status (entity_id, location_id, data) values (1, 10, 'Train is a comin');
-		#insert into entity (name, last_status_id, last_location_status_id) values ('testtrain', 10, 10);
 
 		$insertlocations = "insert into sr_locations (source, address) values(6, 'Train test') returning id";
 		$insertlocations_handle = $dbh->prepare($insertlocations);
@@ -118,14 +104,9 @@ while(1){
 		$query2_handle->bind_columns(\$entity_id, \$last_loc_status_id );
 		$query2_handle->fetch();
 
-		print "need to update entity_status,  last_location_status_id = $last_loc_status_id \n";
+		#print "need to update entity_status,  last_location_status_id = $last_loc_status_id \n";
 
 		### END CHECK EXISTING ENTITY VALUES
-
-
-
-
-
 
 		$insertstatus = "insert into entity_status (entity_id, has_data, has_begin, location_id, data, data_begin) values ($entity_id, 'TRUE', 'TRUE', $locid, '{ \"train_info\": \"The $subwayline train is a comin at $timeholder\" } ', now() ) returning id";
 
@@ -135,27 +116,64 @@ while(1){
 		$statusid = $insertstatus_handle->fetch()->[0];
 
 
-	### BEGIN UPDATE entity_status set data_end to now().
-	if($last_loc_status_id != -1) {
-		my $rows = $dbh->do("UPDATE entity_status set data_end=now(), has_end='TRUE' WHERE id=$last_loc_status_id" );
-	}
-	### END UPDATE entity_status
+		### BEGIN UPDATE entity_status set data_end to now().
+		if($last_loc_status_id != -1) {
+			my $rows = $dbh->do("UPDATE entity_status set data_end=now(), has_end='TRUE' WHERE id=$last_loc_status_id" );
+		}
+		### END UPDATE entity_status
 		
 
-	my $rows = $dbh->do("UPDATE entity set has_location='TRUE', location_id=$locid, last_location_status_id=$statusid where id=$entity_id");
-
+		my $rows = $dbh->do("UPDATE entity set has_location='TRUE', location_id=$locid, last_location_status_id=$statusid where id=$entity_id");
 
 	} 
 
 
-
-
-	#my $rows = $dbh->do("select a.trip_id, a.departure_time, b.arrival_time from (select departure_time, trip_id, stop_sequence from nyc_subways) a, (select arrival_time, trip_id, stop_sequence from 
-	#nyc_subways) b where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time < '$timeholder' and b.arrival_time>'$timeholder' limit 1;");
+	#Select all the trains that ended their trips since the last time we updated, and close them out
+	# PREPARE THE QUERY
+	#search for trips that ended in the last $timeinterval til now (or maybe a few seconds buffer),
+	#which don't have end times set
+	#SELECT city FROM weather WHERE temp_lo = (SELECT max(temp_lo) FROM weather);
 	
-	#print "$rows\n"
+	#calculate the time interval we want to search (double it to be safe)
+	($s1,$m1,$h1,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+	$newtime = sprintf ("%02d%02d%02d", $h1, $m1, $s1);		
+	($year2, $month2, $day2, $h2, $m2, $s2) = Add_Delta_DHMS( 1900, 02, 23, $h1, $m1, $s1, 0, 0, 0, -2*$timeinterval);
+	$searchtime = sprintf ("%02d%02d%02d", $h2, $m2, $s2);
+	
+	#my $timetosearch=$timeholder - (2*$timeinterval);
 
-}#end big for loop
+	
+	$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x, 
+	entity e, entity_status es where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
+	AND x.stop_id=a.stop_id AND e.last_location_status_id=es.id AND es.has_end='FALSE' AND e.name=a.trip_id";
+
+#maybe don't do this all at once
+#				s.layer_id=2002 AND s.feature_data LIKE '%\"ROUTE\":\"%$subwayline%\",\"NAME\"%' 
+#				AND ST_Distance(st_endpoint(s.sr_geom),st_geomfromtext('POINT(x.stop_lon x.stop_lat)', 4326)) < 0.001) 
+#OR ST_Distance(st_startpoint(s.sr_geom),st_geomfromtext('POINT(x.stop_lon x.stop_lat)', 4326)) < 0.001)
+
+	#print "$endquery \n";
+	
+	$endquery_handle = $dbh->prepare($endquery);
+
+	# EXECUTE THE QUERY
+	$endquery_handle->execute();
+
+	# BIND TABLE COLUMNS TO VARIABLES
+	$endquery_handle->bind_columns(undef, \$tripid, \$stoplon, \$stoplat, \$finishtime);
+
+	# LOOP THROUGH RESULTS
+	while($endquery_handle->fetch()) {
+	#	my $rows = $dbh->do("UPDATE entity_status set data_end=now(), has_end='TRUE' WHERE id=$last_loc_status_id" );
+		print "The trip has finished: $tripid located at $stoplon and $stoplat at $finishtime\n";
+
+	}
+
+	#Note: 3/5/13
+	#It now checks when a trip has ended, but it doesn't update the tables yet
+
+
+}#end big while loop
 
 
 
