@@ -9,6 +9,7 @@ my $timeinterval = 5;
 
 # connect to database
 my $dbh = DBI->connect("DBI:Pg:dbname=sr_data;host=localhost", "sitrepadmin", "", {'RaiseError' => 1});
+my $srdb = DBI->connect("DBI:Pg:dbname=sitrep;host=localhost", "sitrepadmin", "", {'RaiseError' => 1});
 
 while(1){
 	sleep($timeinterval);
@@ -28,11 +29,19 @@ while(1){
 		$daysearch = "SUN";
 	}
 
+
+	#Find a train for each trip
+	#SELECT * FROM entity WHERE data @> '"type"=>"train"'::hstore;
+
+
 	#Select all the trains that are active at this time (i.e. between two stops)
 	#find the stations that each subway is between
 	# PREPARE THE QUERY
 
-	$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'";
+	#regular
+	#$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'";
+	#limit 1
+	$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch' limit 10";
 
 	$query_handle = $dbh->prepare($query);
 
@@ -42,7 +51,8 @@ while(1){
 	# BIND TABLE COLUMNS TO VARIABLES
 	$query_handle->bind_columns(undef, \$tripid, \$depart, \$arrive, \$start_lon, \$start_lat, \$end_lon, \$end_lat, \$startid, \$endid);
 
-	# LOOP THROUGH RESULTS
+	# LOOP THROUGH RESULTS (i.e. all the current train trips)
+			$counter=0;	
 	while($query_handle->fetch()) {
 
 	#calculate what percent along the way the subway is
@@ -65,6 +75,7 @@ while(1){
 		#get the route for that subway
 		#interpolate it's position along the route	
 
+		#Note: this query might require accessing tables from different databases
 		$routequery = "SELECT st_astext(st_line_interpolate_point(sr_geom, $pct_along_route)), id from sr_layer_static_data where layer_id=2002 AND feature_data LIKE '%\"ROUTE\":\"%$subwayline%\",\"NAME\"%'  AND (ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)', 4326)) < 0.001 AND ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)', 4326)) < 0.001) OR (ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)', 4326)) < 0.001 AND ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)', 4326)) < 0.001)";
 
 		#print "$routequery\n";
@@ -80,12 +91,13 @@ while(1){
 		$routequery_handle->fetch();
 
 	
-		print "$tripid $dataid $pct_along_route $startid $endid		$subwayline  $train\n";
+		print "$tripid $dataid $pct_along_route $startid $endid		$subwayline  GEOM=$train\n";
 
 		#update the sr tables
 
-		$insertlocations = "insert into sr_locations (source, address) values(6, 'Train test') returning id";
-		$insertlocations_handle = $dbh->prepare($insertlocations);
+
+		$insertlocations = "insert into location (source, has_data, data ,geometry) values(6, 't', hstore(ARRAY[['type','train'], ['tripid','$tripid'], ['subwayline','$subwayline']]), St_Force_3D(St_GeomFromText( '$train', 4326) )   ) returning id";
+		$insertlocations_handle = $srdb->prepare($insertlocations);
 		# EXECUTE THE QUERY
 		$insertlocations_handle->execute();
 		#get the returned id
@@ -93,46 +105,115 @@ while(1){
 
 
 		### BEGIN CHECK ENTITY TO SEE IF IT ALREADY HAS A last_location_status_id and if so set the data_end value to now.
-		$query = "select id, last_location_status_id from entity where name='$tripid'";
+		#$query = "select id, last_location_status_id from entity where name='$tripid'";
+		$lastentity_id=$entity_id;
+		
+		$query2 = "select e.id, es.location, es.id, st_x(geometry), st_y(geometry) from entity e, location l, entity_status es where es.data @> '\"trip_id\"=>\"$tripid\"'::hstore AND location is not null AND l.id=location AND e.id=es.entity AND es.has_end='f' order by es.updated desc";
+		
+		#print "$query ;\n";
+		#Perhaps I could grab it's current location as well in order to calculate the direction it's moving
 
-		$query2_handle = $dbh->prepare($query);
+		$query2_handle = $srdb->prepare($query2);
 
 		# EXECUTE THE QUERY
 		$query2_handle->execute();
+		print "query2handle is $query2_handle\n";
 
 		# BIND TABLE COLUMNS TO VARIABLES
-		$query2_handle->bind_columns(\$entity_id, \$last_loc_status_id );
-		$query2_handle->fetch();
+		$query2_handle->bind_columns(\$entity_id, \$last_loc_id, \$last_loc_status_id, \$oldx, \$oldy );
+		
+		#This query could be null if the trip has just started... Deal with that
+		my $found = $query2_handle->fetch();
+
+		print "entity_id is $entity_id \n";
+		
+		#or check if the entity_id is same as the last one
+	
+		$counter=$counter+1;
+		print "counter is at $counter\n";
+	
+		print "found is $found\n";
+		if ($found eq '') {
+			
+  			#Then it's a new trip and does not yet have a train assigned.
+  			#Find a free train and give it this trip id
+  			$tripquery = "SELECT e.id, es.id FROM entity e, entity_status es WHERE es.data @> '\"inservice\"=>\"f\"'::hstore AND has_end='f' and es.entity=e.id limit 1";
+			$tripquery_handle = $srdb->prepare($tripquery);
+			$tripquery_handle->execute();
+			$tripquery_handle->bind_columns(undef, \$entity_id, \$notinservicestatus );
+			$tripquery_handle->fetch();
+			 print "Starting new trip with entity $entity_id \n";
+			 #select name from entity, entity_status where entity.status=entity_status.id AND entity_status.data @> '"inservice"=>"f"'::hstore AND has_end='f';
+			 #find a train where the inservice status is f and has_end is false
+			 
+		 	#$insertlocations = "insert into location (source, has_data, data ,geometry) values(6, 't', hstore(ARRAY[['type','train'], ['tripid','$tripid'], ['subwayline','$subwayline']]), St_Force_3D(St_GeomFromText( 'POINT($oldx $oldy)', 4326) )   ) returning id";
+			#$insertlocations_handle = $srdb->prepare($insertlocations);
+			# EXECUTE THE QUERY
+			#$insertlocations_handle->execute();
+			#get the returned id
+			#$startlocid = $insertlocations_handle->fetch()->[0];
+			 
+			 #doesn't have location data
+			#$query = "insert into entity_status (entity, has_data, has_begin, location, data, data_begin) values ($entity_id, 'TRUE', 'TRUE', $startlocid, hstore(ARRAY[['subwayline','$subwayline'],['inservice','t'], ['trip_id','$tripid']]), now() ) returning id";
+
+##HERE IT IS iNSERTING SERVICE
+### SHOULD NOT HAVE TO INSERT has_XXX anymore- automatically done by trigger
+			$insertquery = "insert into entity_status (entity,  data, data_begin) values ($entity_id, hstore(ARRAY[['subwayline','$subwayline'],['inservice','t'], ['trip_id','$tripid']]), now() ) returning id";
+			$insertquery_handle = $srdb->prepare($insertquery);
+			$insertquery_handle->execute();
+			$insertquery_handle->bind_columns(undef, \$newentitystatusid );
+			$insertquery_handle->fetch();
+			
+			#print "$notinservicestatus is the notinservicestatus\n";
+			
+			my $rows = $srdb->do("UPDATE entity set data = data || '\"tripid\"=>\"$tripid\"'::hstore WHERE id=$entity_id" );
+			#close the inservice=f status and create an inservice=t with trip_id
+			
+			my $rows = $srdb->do("UPDATE entity_status set data_end=now() WHERE id=$notinservicestatus" );
+  			#UPDATE hstore_test SET data = data || '"key4"=>"some value"'::hstore
+  			
+  			#set oldx and oldy to be the start geometry
+		}
+
 
 		#print "need to update entity_status,  last_location_status_id = $last_loc_status_id \n";
 
 		### END CHECK EXISTING ENTITY VALUES
 
-		$insertstatus = "insert into entity_status (entity_id, has_data, has_begin, location_id, data, data_begin) values ($entity_id, 'TRUE', 'TRUE', $locid, '{ \"train_info\": \"The $subwayline train is a comin at $timeholder\" } ', now() ) returning id";
 
-		$insertstatus_handle = $dbh->prepare($insertstatus);
+		#print "Entity ID is $entity_id\n";
+		$insertstatus = "insert into entity_status (entity, has_data, has_begin, location, data, data_begin) values ($entity_id, 'TRUE', 'TRUE', $locid, hstore(ARRAY[['subwayline','$subwayline'], ['trip_id','$tripid'], ['heading','0']]), now() ) returning id";
+		#Should include heading based on azimuth calculation ['heading','']
+		$insertstatus_handle = $srdb->prepare($insertstatus);
 		$insertstatus_handle->execute();
 		#get the returned status id
 		$statusid = $insertstatus_handle->fetch()->[0];
 
+		#print "$last_loc_status_id is the last_loc_status_id\n";
 
-		### BEGIN UPDATE entity_status set data_end to now().
-		if($last_loc_status_id != -1) {
-			my $rows = $dbh->do("UPDATE entity_status set data_end=now(), has_end='TRUE' WHERE id=$last_loc_status_id" );
+		### BEGIN UPDATE entity_status set data_end to now(). - the old status
+		if($last_loc_status_id != '') {
+			
+			my $rows = $srdb->do("UPDATE entity_status set data_end=now(), has_end='TRUE' WHERE id=$last_loc_status_id" );
 		}
 		### END UPDATE entity_status
 		
 
-		my $rows = $dbh->do("UPDATE entity set has_location='TRUE', location_id=$locid, last_location_status_id=$statusid where id=$entity_id");
+		#Calculat heading with 
+		#select degrees(st_azimuth(st_geomfromtext('POINT(-73.95 40.82)', 4326), st_geomfromtext('POINT(-73.95 40.92)', 4326)));
+		#This goes directly north. The second point is the start, and the first point is the end. ie How would I get from point A (1st point) starting at point B (second point).
+
+		#INSERT INTO entity (name, has_data, data) VALUES ( 'Test Entity 4', TRUE, hstore(ARRAY[['SomeVariableName1','SomeValue1'],['SomeVariableName2','4']]) );
+
+#### NO LONGER NEED TO DO entity table has no status coulmn anymore. jr.
+#		my $rows = $srdb->do("UPDATE entity set status=$statusid where id=$entity_id");
 
 	} 
 
 
 	#Select all the trains that ended their trips since the last time we updated, and close them out
-	# PREPARE THE QUERY
 	#search for trips that ended in the last $timeinterval til now (or maybe a few seconds buffer),
 	#which don't have end times set
-	#SELECT city FROM weather WHERE temp_lo = (SELECT max(temp_lo) FROM weather);
 	
 	#calculate the time interval we want to search (double it to be safe)
 	($s1,$m1,$h1,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
@@ -140,12 +221,14 @@ while(1){
 	($year2, $month2, $day2, $h2, $m2, $s2) = Add_Delta_DHMS( 1900, 02, 23, $h1, $m1, $s1, 0, 0, 0, -2*$timeinterval);
 	$searchtime = sprintf ("%02d%02d%02d", $h2, $m2, $s2);
 	
-	#my $timetosearch=$timeholder - (2*$timeinterval);
+	#$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x, 
+	#entity e, entity_status es where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
+	#AND x.stop_id=a.stop_id AND e.last_location_status_id=es.id AND es.has_end='FALSE' AND e.name=a.trip_id";
 
-	
-	$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x, 
-	entity e, entity_status es where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
-	AND x.stop_id=a.stop_id AND e.last_location_status_id=es.id AND es.has_end='FALSE' AND e.name=a.trip_id";
+
+	#	#SELECT city FROM weather WHERE temp_lo = (SELECT max(temp_lo) FROM weather);
+	$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
+	AND x.stop_id=a.stop_id";
 
 #maybe don't do this all at once
 #				s.layer_id=2002 AND s.feature_data LIKE '%\"ROUTE\":\"%$subwayline%\",\"NAME\"%' 
@@ -157,6 +240,7 @@ while(1){
 	$endquery_handle = $dbh->prepare($endquery);
 
 	# EXECUTE THE QUERY
+	#I need to figure out how to end the trip, because it may require queries across databases ... or that's how it is now anyway.
 	$endquery_handle->execute();
 
 	# BIND TABLE COLUMNS TO VARIABLES
@@ -167,6 +251,8 @@ while(1){
 	#	my $rows = $dbh->do("UPDATE entity_status set data_end=now(), has_end='TRUE' WHERE id=$last_loc_status_id" );
 		print "The trip has finished: $tripid located at $stoplon and $stoplat at $finishtime\n";
 
+		#set the true service status to end, and insert a new one that is false (thus freeing up the train for future trips)
+		#create a new location based on the end, and set an end to the old one (and leave the new one open??)
 	}
 
 	#Note: 3/5/13
