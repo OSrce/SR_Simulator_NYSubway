@@ -12,12 +12,16 @@ my $dbh = DBI->connect("DBI:Pg:dbname=sr_data;host=localhost", "sitrepadmin", ""
 my $srdb = DBI->connect("DBI:Pg:dbname=sitrep;host=localhost", "sitrepadmin", "", {'RaiseError' => 1});
 
 while(1){
-	sleep($timeinterval);
+	#sleep($timeinterval);
 
 	#Get the time
 	($s1,$m1,$h1,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
 	$timeholder = sprintf ("%02d%02d%02d", $h1, $m1, $s1);
 	my $timeinseconds = 60*$m1 + 3600*$h1 + $s1;
+
+	($year2, $month2, $day2, $h2, $m2, $s2) = Add_Delta_DHMS( 1900, 02, 23, $h1, $m1, $s1, 0, 0, 0, -2*$timeinterval);
+	my $timeholderpast = sprintf ("%02d%02d%02d", $h2, $m2, $s2);
+	
 
 
 	#print "wday is $wday\n";
@@ -40,9 +44,16 @@ while(1){
 
 	#regular
 	#$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'";
-	#limit 1
-	$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch' limit 10";
+	#This looks for recently completed trips as well (because arrival time only has to be after about 10 seoconds in the past
+	#$query = "select distinct a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholderpast' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch' order by arrival_time desc";
+	$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'";
+	
 
+
+	#$query = "select distinct a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch' group by b.arrival_time, a.trip_id, a.departure_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  order by b.arrival_time desc";
+	
+	#print "$query\n";
+	
 	$query_handle = $dbh->prepare($query);
 
 	# EXECUTE THE QUERY
@@ -62,10 +73,25 @@ while(1){
 		my $depart_seconds =   @depart_tokens[0] * 3600 + @depart_tokens[1]*60 + @depart_tokens[2];
 		my $arrive_seconds  = @arrive_tokens[0] * 3600 + @arrive_tokens[1]*60 + @arrive_tokens[2];
 
+
+
 		my $trip_interval = $arrive_seconds - $depart_seconds;
 		my $pct_along_route =  ($timeinseconds - $depart_seconds)/($arrive_seconds - $depart_seconds);
 		my $num = $timeinseconds - $depart_seconds;
-
+		
+		#print "$arrive_seconds - $depart_seconds is $trip_interval and the time is $timeinseconds \n";
+		#print "$start_lon $start_lat to $end_lon $end_lat . From $startid to $endid\n";
+	
+		#FIX THIS! This is because my "present time" actually extends a few seconds into the past. I did that because I want trips to update all the way to the end. I'm not sure of the best way
+		#to deal with this unpleasant side effect.
+	#	if ($pct_along_route <= 1) {
+	#		print "pct_along_route is $pct_along_route \n";	
+	#		$pct_along_route = 1;
+	#	}	
+	
+	#get rid of this
+	#	$pct_along_route = 0.99;
+	
 		#get the subway line from the ID
 		my $subwayline = substr($tripid, 20, 1);
 		#Some subways have 2 digit IDs, but I'll ignore that for now
@@ -95,8 +121,10 @@ while(1){
 
 		#update the sr tables
 
+	
 
 		$insertlocations = "insert into location (source, has_data, data ,geometry) values(6, 't', hstore(ARRAY[['type','train'], ['tripid','$tripid'], ['subwayline','$subwayline']]), St_Force_3D(St_GeomFromText( '$train', 4326) )   ) returning id";
+		#print "$insertlocations\n";
 		$insertlocations_handle = $srdb->prepare($insertlocations);
 		# EXECUTE THE QUERY
 		$insertlocations_handle->execute();
@@ -117,7 +145,7 @@ while(1){
 
 		# EXECUTE THE QUERY
 		$query2_handle->execute();
-		print "query2handle is $query2_handle\n";
+		#print "query2handle is $query2_handle\n";
 
 		# BIND TABLE COLUMNS TO VARIABLES
 		$query2_handle->bind_columns(\$entity_id, \$last_loc_id, \$last_loc_status_id, \$oldx, \$oldy );
@@ -125,14 +153,14 @@ while(1){
 		#This query could be null if the trip has just started... Deal with that
 		my $found = $query2_handle->fetch();
 
-		print "entity_id is $entity_id \n";
+		#print "entity_id is $entity_id \n";
 		
 		#or check if the entity_id is same as the last one
 	
 		$counter=$counter+1;
-		print "counter is at $counter\n";
+		#print "counter is at $counter\n";
 	
-		print "found is $found\n";
+		#print "found is $found\n";
 		if ($found eq '') {
 			
   			#Then it's a new trip and does not yet have a train assigned.
@@ -189,8 +217,6 @@ while(1){
 		#get the returned status id
 		$statusid = $insertstatus_handle->fetch()->[0];
 
-		#print "$last_loc_status_id is the last_loc_status_id\n";
-
 		### BEGIN UPDATE entity_status set data_end to now(). - the old status
 		if($last_loc_status_id != '') {
 			
@@ -203,13 +229,10 @@ while(1){
 		#select degrees(st_azimuth(st_geomfromtext('POINT(-73.95 40.82)', 4326), st_geomfromtext('POINT(-73.95 40.92)', 4326)));
 		#This goes directly north. The second point is the start, and the first point is the end. ie How would I get from point A (1st point) starting at point B (second point).
 
-		#INSERT INTO entity (name, has_data, data) VALUES ( 'Test Entity 4', TRUE, hstore(ARRAY[['SomeVariableName1','SomeValue1'],['SomeVariableName2','4']]) );
 
-#### NO LONGER NEED TO DO entity table has no status coulmn anymore. jr.
-#		my $rows = $srdb->do("UPDATE entity set status=$statusid where id=$entity_id");
 
 	} 
-
+	#}
 
 	#Select all the trains that ended their trips since the last time we updated, and close them out
 	#search for trips that ended in the last $timeinterval til now (or maybe a few seconds buffer),
@@ -218,7 +241,7 @@ while(1){
 	#calculate the time interval we want to search (double it to be safe)
 	($s1,$m1,$h1,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
 	$newtime = sprintf ("%02d%02d%02d", $h1, $m1, $s1);		
-	($year2, $month2, $day2, $h2, $m2, $s2) = Add_Delta_DHMS( 1900, 02, 23, $h1, $m1, $s1, 0, 0, 0, -2*$timeinterval);
+	($year2, $month2, $day2, $h2, $m2, $s2) = Add_Delta_DHMS( 1900, 02, 23, $h1, $m1, $s1, 0, 0, 0, -5*$timeinterval);
 	$searchtime = sprintf ("%02d%02d%02d", $h2, $m2, $s2);
 	
 	#$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x, 
@@ -227,9 +250,14 @@ while(1){
 
 
 	#	#SELECT city FROM weather WHERE temp_lo = (SELECT max(temp_lo) FROM weather);
-	$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
-	AND x.stop_id=a.stop_id";
+	#$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
+	#AND x.stop_id=a.stop_id";
 
+	
+	$endquery = "select a.trip_id from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
+	AND x.stop_id=a.stop_id";
+	#print "$endquery\n";
+	
 #maybe don't do this all at once
 #				s.layer_id=2002 AND s.feature_data LIKE '%\"ROUTE\":\"%$subwayline%\",\"NAME\"%' 
 #				AND ST_Distance(st_endpoint(s.sr_geom),st_geomfromtext('POINT(x.stop_lon x.stop_lat)', 4326)) < 0.001) 
@@ -244,12 +272,29 @@ while(1){
 	$endquery_handle->execute();
 
 	# BIND TABLE COLUMNS TO VARIABLES
-	$endquery_handle->bind_columns(undef, \$tripid, \$stoplon, \$stoplat, \$finishtime);
+	#$endquery_handle->bind_columns(undef, \$endtripid, \$stoplon, \$stoplat, \$finishtime);
+	$endquery_handle->bind_columns(undef, \$endtripid);
+
 
 	# LOOP THROUGH RESULTS
 	while($endquery_handle->fetch()) {
-	#	my $rows = $dbh->do("UPDATE entity_status set data_end=now(), has_end='TRUE' WHERE id=$last_loc_status_id" );
-		print "The trip has finished: $tripid located at $stoplon and $stoplat at $finishtime\n";
+		#Update the last location update, and set it to end
+		my $rows = $srdb->do("UPDATE entity_status set data_end=now() WHERE data @> '\"trip_id\"=>\"$endtripid\"'::hstore AND data ? 'heading' AND has_end='f'" );
+		#Update the inservice true to end
+		$updateendquery = "UPDATE entity_status set data_end=now() WHERE data @> '\"trip_id\"=>\"$endtripid\"'::hstore AND data @> '\"inservice\"=>\"t\"'::hstore AND has_end='f' returning entity";
+		$updateendquery_handle = $srdb->prepare($updateendquery);
+		$updateendquery_handle->execute();
+		$updateendquery_handle->bind_columns(undef, \$entityidtoend );
+		my $found = $updateendquery_handle->fetch();
+		#get the returned entity id
+		#$entityidtoend = $updateendquery_handle->fetch()->[0];
+		
+		if ($found eq ''){
+			print "Entity for $endtripid NOT FOUND!!";
+		} else {
+					print "The trip has finished: $endtripid at $finishtime\n";
+					my $rows = $srdb->do("insert into entity_status (entity, data) VALUES ($entityidtoend, hstore(ARRAY[['inservice','f']]))");
+		}
 
 		#set the true service status to end, and insert a new one that is false (thus freeing up the train for future trips)
 		#create a new location based on the end, and set an end to the old one (and leave the new one open??)
