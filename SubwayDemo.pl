@@ -25,19 +25,26 @@ while(1){
 	$timeholder = sprintf ("%02d%02d%02d", $h1, $m1, $s1);
 	my $timeinseconds = 60*$m1 + 3600*$h1 + $s1;
 
-#	($year2, $month2, $day2, $h2, $m2, $s2) = Add_Delta_DHMS( 1900, 02, 23, $h1, $m1, $s1, 0, 0, 0, -2*$timeinterval);
-#	my $timeholderpast = sprintf ("%02d%02d%02d", $h2, $m2, $s2);
+
+#ToDo: Get trains that start before midnight to keep running even when it passes midnight. This is a particular difficult when the days switches from WKD to SAT to SUN to WKD.
+#	($year2, $month2, $day2, $h2, $m2, $s2) = Add_Delta_DHMS( 1900, 02, 23, $h1, $m1, $s1, 0, 0, 10, 0);
+#	$timeholderpast = sprintf ("%02d%02d%02d", $h2, $m2, $s2);
 	
-
-
 
 	#print "wday is $wday\n";
 	if ($wday < 6) {
 		$daysearch = "WKD";
+			if($wday = 1) {
+				$daybeforesearch= "SUN";
+			} else {
+				$daybeforesearch= "WKD";
+			}
 	}	elsif ($wday = 6) {
 		$daysearch = "SAT";
+		$daybeforesearch= "WKD";
 	} else {
 		$daysearch = "SUN";
+		$daybeforesearch= "SAT";
 	}
 
 
@@ -120,9 +127,13 @@ while(1){
 		#This as of 03/17/13
 		#$routequery = "SELECT st_astext(st_line_interpolate_point(sr_geom, $pct_along_route)), id, feature_data FROM sr_layer_static_data where layer_id=2002 ORDER BY least(ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)',4326)) + ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)',4326)), ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)',4326)) + ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)',4326)) )  LIMIT 1";
 
-		$routequery = "SELECT st_astext(st_line_interpolate_point(CASE WHEN (ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326))) < (ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326))) THEN (ST_line_substring(geometry, ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326)), ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326)))) ELSE (ST_line_substring(geometry, ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326)), ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326)))) END, $pct_along_route) ), id, data FROM srmap where group_id=2015 AND data @> '\"SUBWAY\"=>\"$subwayline\"' AND (ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326) ) + ST_Distance(geometry, st_geomfromtext('POINT($start_lon $start_lat)', 4326)))= (select min(ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326) ) + ST_Distance(geometry, st_geomfromtext('POINT($start_lon $start_lat)', 4326))) from srmap where group_id=2015 AND data @> '\"SUBWAY\"=>\"$subwayline\"')";
+
+		#Change this 3/18 because the CASE might return a point, not a line, and then interpolate fails
+		#$routequery = "SELECT st_astext(st_line_interpolate_point(CASE WHEN (ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326))) < (ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326))) THEN (ST_line_substring(geometry, ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326)), ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326)))) ELSE (ST_line_substring(geometry, ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326)), ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326)))) END, $pct_along_route) ), id, data FROM srmap where group_id=2015 AND data @> '\"SUBWAY\"=>\"$subwayline\"' AND (ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326) ) + ST_Distance(geometry, st_geomfromtext('POINT($start_lon $start_lat)', 4326)))= (select min(ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326) ) + ST_Distance(geometry, st_geomfromtext('POINT($start_lon $start_lat)', 4326))) from srmap where group_id=2015 AND data @> '\"SUBWAY\"=>\"$subwayline\"')";
+		$routequery = "SELECT st_astext(CASE WHEN (ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326))) < (ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326))) THEN (ST_line_substring(geometry, ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326)), ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326)))) ELSE (ST_line_substring(geometry, ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326)), ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326)))) END ), id, data FROM srmap where group_id=2015 AND data @> '\"SUBWAY\"=>\"$subwayline\"' AND (ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326) ) + ST_Distance(geometry, st_geomfromtext('POINT($start_lon $start_lat)', 4326)))= (select min(ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326) ) + ST_Distance(geometry, st_geomfromtext('POINT($start_lon $start_lat)', 4326))) from srmap where group_id=2015 AND data @> '\"SUBWAY\"=>\"$subwayline\"')";
+		
 		#ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat)', 4326)), data
-		print "$routequery\n";
+		#print "$routequery\n";
 
 		$routequery_handle = $srdb->prepare($routequery);
 
@@ -130,18 +141,34 @@ while(1){
 		$routequery_handle->execute();
 
 		# BIND TABLE COLUMNS TO VARIABLES
-		$routequery_handle->bind_columns(undef, \$train, \$dataid, \$routedata );
+		$routequery_handle->bind_columns(undef, \$trainseg, \$dataid, \$routedata );
 
 		$routequery_handle->fetch();
 
+	
+		if (index($trainseg, "POINT") != -1) {
+    		
+    		#The just include the point
+    		$train=$trainseg;
+    		
+		} else {
+			#Interpolate the point along the line
+			$interpoltequery = "select st_astext(st_line_interpolate_point(st_geomfromtext('$trainseg', 4326), $pct_along_route))";
+			$interpoltequery_handle = $srdb->prepare($interpoltequery);
+			$interpoltequery_handle->execute();
+			$interpoltequery_handle->bind_columns(undef, \$train);
+			$interpoltequery_handle->fetch();
+		}
+	
+	
+	
 	
 		#print "$tripid $dataid $pct_along_route $startid $endid		$subwayline  GEOM=$train\n";
 
 		#update the sr tables
 
-
 		$insertlocations = "insert into location (source, has_data, data ,geometry) values(6, 't', hstore(ARRAY[['type','train'], ['tripid','$tripid'], ['subwayline','$subwayline']]), St_Force_3D(St_GeomFromText( '$train', 4326) )   ) returning id";
-		#print "$insertlocations\n";
+		print "$insertlocations\n";
 		$insertlocations_handle = $srdb->prepare($insertlocations);
 		# EXECUTE THE QUERY
 		$insertlocations_handle->execute();
@@ -159,19 +186,15 @@ while(1){
 		#Perhaps I could grab it's current location as well in order to calculate the direction it's moving
 
 		$query2_handle = $srdb->prepare($query2);
-
-		# EXECUTE THE QUERY
 		$query2_handle->execute();
 		#print "query2handle is $query2_handle\n";
-
-		# BIND TABLE COLUMNS TO VARIABLES
 		$query2_handle->bind_columns(\$entity_id, \$last_loc_id, \$last_loc_status_id, \$heading, \$distancetraveled );
+		#ToDo: Calculate speed (more important for cars and buses ... and more for real time data)
 		
 		#This query could be null if the trip has just started... Deal with that
 		my $found = $query2_handle->fetch();
 
 		#print "entity_id is $entity_id \n";
-		
 		
 		if($distancetraveled > 0.01){
 			print "Distance traveled is $distancetraveled. $entity_id $tripid ... $dataid $routedata\n";
@@ -275,18 +298,20 @@ while(1){
 	($year2, $month2, $day2, $h2, $m2, $s2) = Add_Delta_DHMS( 1900, 02, 23, $h1, $m1, $s1, 0, 0, -5, 0);
 	$searchtime = sprintf ("%02d%02d%02d", $h2, $m2, $s2);
 	
-	#$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x, 
-	#entity e, entity_status es where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
-	#AND x.stop_id=a.stop_id AND e.last_location_status_id=es.id AND es.has_end='FALSE' AND e.name=a.trip_id";
-
-
-	#	#SELECT city FROM weather WHERE temp_lo = (SELECT max(temp_lo) FROM weather);
-	#$endquery = "select a.trip_id, x.stop_lon, x.stop_lat, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
-	#AND x.stop_id=a.stop_id";
-
+	#if searchtime is > newtime then that means we've past midnight
+	#therefore we should search for endtimes that are > than searchtime OR < newtime
+	#This now looks for trips that started the day before that aren't ended yet
+	if ($searchtime > $newtime) {
 	
-	$endquery = "select a.trip_id, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
-	AND x.stop_id=a.stop_id AND a.trip_id ~ '$daysearch'";
+		#This looks if the arrival time is between searchtime and midnight, or between midnight and now	
+		$endquery = "select a.trip_id, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where ((a.arrival_time >= '$searchtime' AND a.arrival_time < '120000') OR (a.arrival_time >= '000000' AND a.arrival_time < '$newtime') )  AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
+	AND x.stop_id=a.stop_id AND (a.trip_id ~ '$daysearch' OR a.trip_id ~ '$daybeforesearch')";	
+	
+	} else {
+	
+		$endquery = "select a.trip_id, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
+	AND x.stop_id=a.stop_id AND (a.trip_id ~ '$daysearch' OR a.trip_id ~ '$daybeforesearch')";
+	}
 	#print "$endquery\n";
 	
 #maybe don't do this all at once
@@ -297,16 +322,13 @@ while(1){
 	#print "Endquery is $endquery \n";
 	
 	$endquery_handle = $dbh->prepare($endquery);
-
-	# EXECUTE THE QUERY
 	#I need to figure out how to end the trip, because it may require queries across databases ... or that's how it is now anyway.
 	$endquery_handle->execute();
-
-	# BIND TABLE COLUMNS TO VARIABLES
 	#$endquery_handle->bind_columns(undef, \$endtripid, \$stoplon, \$stoplat, \$finishtime);
 	$endquery_handle->bind_columns(undef, \$endtripid, \$finishtime);
 
 
+#FOR SOME REASON IT'S HANGING HERE FOR A LONG TIME
 	# LOOP THROUGH RESULTS
 	while($endquery_handle->fetch()) {
 		#Update the last location update, and set it to end
