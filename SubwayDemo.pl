@@ -12,7 +12,7 @@ my $dbh = DBI->connect("DBI:Pg:dbname=sr_data;host=localhost", "sitrepadmin", ""
 my $srdb = DBI->connect("DBI:Pg:dbname=sitrep;host=localhost", "sitrepadmin", "", {'RaiseError' => 1});
 
 while(1){
-	sleep($timeinterval);
+	#sleep($timeinterval);
 
 	#Get the time
 	($s1,$m1,$h1,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
@@ -53,7 +53,7 @@ while(1){
 	#$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'";
 	#This looks for recently completed trips as well (because arrival time only has to be after about 10 seoconds in the past
 	#$query = "select distinct a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholderpast' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch' order by arrival_time desc";
-	$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id  from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'";
+	$query = "select a.trip_id, a.departure_time, b.arrival_time, x.stop_lon, x.stop_lat, y.stop_lon, y.stop_lat, a.stop_id, b.stop_id from (select departure_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) b, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x,  (select stop_lat, stop_lon, stop_id from nyc_subway_stops) y where a.trip_id=b.trip_id and (b.stop_sequence-a.stop_sequence)=1 and a.departure_time <= '$timeholder' and b.arrival_time>='$timeholder' AND x.stop_id=a.stop_id AND y.stop_id=b.stop_id AND a.trip_id ~ '$daysearch'";
 	
 
 
@@ -106,7 +106,7 @@ while(1){
 	#	$pct_along_route = 0.99;
 	
 		#get the subway line from the ID
-		my $subwayline = substr($tripid, 20, 1);
+		my $subwayline = substr($tripid, 20, 2);
 		#Some subways have 2 digit IDs, but I'll ignore that for now
 		#my $subwaylinetmp2 = substr($tripid, 21, 1);
 
@@ -116,26 +116,29 @@ while(1){
 
 		#Note: this query might require accessing tables from different databases
 		#$routequery = "SELECT st_astext(st_line_interpolate_point(sr_geom, $pct_along_route)), id from sr_layer_static_data where layer_id=2002 AND feature_data LIKE '%\"ROUTE\":\"%$subwayline%\",\"NAME\"%'  AND (ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)', 4326)) < 0.001 AND ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)', 4326)) < 0.001) OR (ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)', 4326)) < 0.001 AND ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)', 4326)) < 0.001)";
-		$routequery = "SELECT st_astext(st_line_interpolate_point(sr_geom, $pct_along_route)), id FROM sr_layer_static_data where layer_id=2002 ORDER BY least(ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)',4326)) + ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)',4326)), ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)',4326)) + ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)',4326)) )  LIMIT 1";
+		
+		#This as of 03/17/13
+		#$routequery = "SELECT st_astext(st_line_interpolate_point(sr_geom, $pct_along_route)), id, feature_data FROM sr_layer_static_data where layer_id=2002 ORDER BY least(ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)',4326)) + ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)',4326)), ST_Distance(st_endpoint(sr_geom),st_geomfromtext('POINT($start_lon $start_lat)',4326)) + ST_Distance(st_startpoint(sr_geom),st_geomfromtext('POINT($end_lon $end_lat)',4326)) )  LIMIT 1";
 
-		#print "$routequery\n";
+		$routequery = "SELECT st_astext(st_line_interpolate_point(CASE WHEN (ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326))) < (ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326))) THEN (ST_line_substring(geometry, ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326)), ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326)))) ELSE (ST_line_substring(geometry, ST_line_locate_point(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326)), ST_line_locate_point(geometry, st_geomfromtext('POINT($start_lon $start_lat )', 4326)))) END, 0.5) ), id, data FROM srmap where group_id=2015 AND data @> '\"SUBWAY\"=>\"$subwayline\"' AND (ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326) ))= (select min(ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat )', 4326) )) from srmap where group_id=2015 AND data @> '\"SUBWAY\"=>\"$subwayline\"')";
+		#ST_Distance(geometry, st_geomfromtext('POINT($end_lon $end_lat)', 4326)), data
+		print "$routequery\n";
 
-		$routequery_handle = $dbh->prepare($routequery);
+		$routequery_handle = $srdb->prepare($routequery);
 
 		# EXECUTE THE QUERY
 		$routequery_handle->execute();
 
 		# BIND TABLE COLUMNS TO VARIABLES
-		$routequery_handle->bind_columns(undef, \$train, \$dataid );
+		$routequery_handle->bind_columns(undef, \$train, \$dataid, \$routedata );
 
 		$routequery_handle->fetch();
 
 	
-		print "$tripid $dataid $pct_along_route $startid $endid		$subwayline  GEOM=$train\n";
+		#print "$tripid $dataid $pct_along_route $startid $endid		$subwayline  GEOM=$train\n";
 
 		#update the sr tables
 
-	
 
 		$insertlocations = "insert into location (source, has_data, data ,geometry) values(6, 't', hstore(ARRAY[['type','train'], ['tripid','$tripid'], ['subwayline','$subwayline']]), St_Force_3D(St_GeomFromText( '$train', 4326) )   ) returning id";
 		#print "$insertlocations\n";
@@ -150,9 +153,9 @@ while(1){
 		#$query = "select id, last_location_status_id from entity where name='$tripid'";
 		$lastentity_id=$entity_id;
 		
-		$query2 = "select e.id, es.location, es.id, st_x(geometry), st_y(geometry) from entity e, location l, entity_status es where es.data @> '\"trip_id\"=>\"$tripid\"'::hstore AND location is not null AND l.id=location AND e.id=es.entity AND es.has_end='f' order by es.updated desc";
+		$query2 = "select e.id, es.location, es.id, degrees(st_azimuth(St_Force_3D(St_GeomFromText( '$train', 4326) ) , St_Force_3D(st_geomfromtext('POINT(' || st_x(geometry) || ' ' || st_y(geometry) || ')', 4326)))), st_distance(St_Force_3D(St_GeomFromText( '$train', 4326) ) , St_Force_3D(st_geomfromtext('POINT(' || st_x(geometry) || ' ' || st_y(geometry) || ')', 4326)))  from entity e, location l, entity_status es where es.data @> '\"trip_id\"=>\"$tripid\"'::hstore AND location is not null AND l.id=location AND e.id=es.entity AND es.has_end='f' order by es.updated desc";
 		
-		#print "$query ;\n";
+		#print "$query2 ;\n";
 		#Perhaps I could grab it's current location as well in order to calculate the direction it's moving
 
 		$query2_handle = $srdb->prepare($query2);
@@ -162,13 +165,18 @@ while(1){
 		#print "query2handle is $query2_handle\n";
 
 		# BIND TABLE COLUMNS TO VARIABLES
-		$query2_handle->bind_columns(\$entity_id, \$last_loc_id, \$last_loc_status_id, \$oldx, \$oldy );
+		$query2_handle->bind_columns(\$entity_id, \$last_loc_id, \$last_loc_status_id, \$heading, \$distancetraveled );
 		
 		#This query could be null if the trip has just started... Deal with that
 		my $found = $query2_handle->fetch();
 
 		#print "entity_id is $entity_id \n";
 		
+		
+		if($distancetraveled > 0.01){
+			print "Distance traveled is $distancetraveled. $entity_id $tripid ... $dataid $routedata\n";
+			print "$routequery\n";
+		}	
 		#or check if the entity_id is same as the last one
 	
 		$counter=$counter+1;
@@ -226,9 +234,14 @@ while(1){
 
 		### END CHECK EXISTING ENTITY VALUES
 
+		#Calculate heading with 
+		#This goes directly north. The second point is the start, and the first point is the end. ie How would I get from point A (1st point) starting at point B (second point).
+		#$headingstatus = "select degrees(st_azimuth(St_Force_3D(St_GeomFromText( '$train', 4326) ) , st_geomfromtext('POINT($oldx $oldy)', 4326)))";
+		#$headingstatus_handle = $srdb->prepare($headingstatus);
+		#$headingstatus_handle->execute();
 
 		#print "Entity ID is $entity_id\n";
-		$insertstatus = "insert into entity_status (entity, has_data, has_begin, location, data, data_begin) values ($entity_id, 'TRUE', 'TRUE', $locid, hstore(ARRAY[['subwayline','$subwayline'], ['trip_id','$tripid'], ['heading','0']]), now() ) returning id";
+		$insertstatus = "insert into entity_status (entity, has_data, has_begin, location, data, data_begin) values ($entity_id, 'TRUE', 'TRUE', $locid, hstore(ARRAY[['subwayline','$subwayline'], ['trip_id','$tripid'], ['heading','$heading'], ['routeid','$dataid']]), now() ) returning id";
 		#Should include heading based on azimuth calculation ['heading','']
 		$insertstatus_handle = $srdb->prepare($insertstatus);
 		$insertstatus_handle->execute();
@@ -243,10 +256,8 @@ while(1){
 		### END UPDATE entity_status
 		
 
-		#Calculat heading with 
-		#select degrees(st_azimuth(st_geomfromtext('POINT(-73.95 40.82)', 4326), st_geomfromtext('POINT(-73.95 40.92)', 4326)));
-		#This goes directly north. The second point is the start, and the first point is the end. ie How would I get from point A (1st point) starting at point B (second point).
 
+		#$statusid = $insertstatus_handle->fetch()->[0];
 
 
 	} 
