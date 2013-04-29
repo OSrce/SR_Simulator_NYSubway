@@ -146,6 +146,7 @@ while(1){
 		$routequery_handle->fetch();
 
 	
+		#ToDo maybe get rid of this, because it shouldn't be neccessary if all the routes are correct, I think. Maybe fix the routes.
 		if (index($trainseg, "POINT") != -1) {
     		
     		#The just include the point
@@ -163,12 +164,12 @@ while(1){
 	
 	
 	
-		#print "$tripid $dataid $pct_along_route $startid $endid		$subwayline  GEOM=$train\n";
+		print "$tripid $dataid $pct_along_route $startid $endid		$subwayline  GEOM=$train\n";
 
 		#update the sr tables
 
 		$insertlocations = "insert into location (source, has_data, data ,geometry) values(6, 't', hstore(ARRAY[['type','train'], ['tripid','$tripid'], ['subwayline','$subwayline']]), St_Force_3D(St_GeomFromText( '$train', 4326) )   ) returning id";
-		print "$insertlocations\n";
+		#print "$insertlocations\n";
 		$insertlocations_handle = $srdb->prepare($insertlocations);
 		# EXECUTE THE QUERY
 		$insertlocations_handle->execute();
@@ -301,6 +302,9 @@ while(1){
 	#if searchtime is > newtime then that means we've past midnight
 	#therefore we should search for endtimes that are > than searchtime OR < newtime
 	#This now looks for trips that started the day before that aren't ended yet
+	
+	print "$newtime is the new time \n";
+	
 	if ($searchtime > $newtime) {
 	
 		#This looks if the arrival time is between searchtime and midnight, or between midnight and now	
@@ -312,7 +316,7 @@ while(1){
 		$endquery = "select a.trip_id, a.arrival_time from (select arrival_time, trip_id, stop_sequence, stop_id from nyc_subways) a, (select stop_lat, stop_lon, stop_id from nyc_subway_stops) x where a.arrival_time >= '$searchtime' AND a.arrival_time < '$newtime' AND a.stop_sequence = (SELECT max(stop_sequence) FROM nyc_subways where trip_id=a.trip_id)
 	AND x.stop_id=a.stop_id AND (a.trip_id ~ '$daysearch' OR a.trip_id ~ '$daybeforesearch')";
 	}
-	#print "$endquery\n";
+	print "$endquery\n";
 	
 #maybe don't do this all at once
 #				s.layer_id=2002 AND s.feature_data LIKE '%\"ROUTE\":\"%$subwayline%\",\"NAME\"%' 
@@ -335,7 +339,7 @@ while(1){
 		my $rows = $srdb->do("UPDATE entity_status set data_end=now() WHERE data @> '\"trip_id\"=>\"$endtripid\"'::hstore AND data ? 'heading' AND has_end='f'" );
 		#Update the inservice true to end
 		$updateendquery = "UPDATE entity_status set data_end=now() WHERE data @> '\"trip_id\"=>\"$endtripid\"'::hstore AND data @> '\"inservice\"=>\"true\"'::hstore AND has_end='f' returning entity";
-	#	print "Update is: $updateendquery\n";
+		print "Update is: $updateendquery\n";
 		$updateendquery_handle = $srdb->prepare($updateendquery);
 		$updateendquery_handle->execute();
 		$updateendquery_handle->bind_columns(undef, \$entityidtoend );
